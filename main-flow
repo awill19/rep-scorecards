@@ -1,0 +1,140 @@
+// NORMALIZE: Month Act Amount, Month Actual Comm Amt, Month Period, Month Start Date, Month Est Amount
+
+// POWER SCRIPT 1
+
+$record.year = $record.monthPeriod.slice(0,$record.monthPeriod.indexOf('-'))
+$record.month = $record.monthPeriod.slice(5,7)
+if ($record.month <= 3) {$record.quarter = 'Q1'}
+else if ($record.month > 3 && $record.month < 7) {$record.quarter = 'Q2'}
+else if ($record.month > 6 && $record.month < 10) {$record.quarter = 'Q3'}
+else if ($record.month > 9 && $record.month < 13) {$record.quarter = 'Q4'}
+
+$record.monthActualAmt < 0.01 ? $record.monthActualAmt = $record.monthEstAmt : $record.monthActualAmt = $record.monthActualAmt;
+
+$record.reps = naviga.multiValuedToString($record.brandReps, '-').replace('---','').replace('--','')
+if ($record.reps.length > 8) {
+    $record.rep1 = $record.reps.slice(0,$record.reps.indexOf('-')); 
+    $record.rep2 = $record.reps.slice($record.reps.indexOf('-')+1,15);
+} 
+else {
+    $record.rep1 = $record.reps;
+}
+
+if ($record.rep2) {$record.goalHelper = `${$record.year}-${$record.quarter}-${$record.rep2}`;} else {$record.goalHelper = `${$record.year}-${$record.quarter}-${$record.rep1}`;}
+if ($record.rep2) {$record.PYHelper = `${$record.year-1}-${$record.quarter}-${$record.rep2}`;} else {$record.PYHelper = `${$record.year-1}-${$record.quarter}-${$record.rep1}`;}
+//$record.rep1 = `${$record.rep1}`
+
+
+if ($record.rep1 == 'vazques') {$record.rep1 = ''}
+if ($record.reps == 'vazques-bausint') {$record.reps = ''}
+
+$record.netAmount = $record.monthActualAmt - naviga.returnANumber($record.monthActualCommAmt)
+
+
+$today = new Date();
+$todayQuarter = alex.accountingQuarter($today);
+$todayYear = alex.accountingYear($today);
+$lastQuarter = $todayQuarter == 1 ? 4: $todayQuarter - 1;
+$lastQuarterYear = $todayQuarter == 1 ? $record.year - 1: $record.year;
+
+if ($record.year == $todayYear && $record.quarter.slice(1) == $todayQuarter) {$record.relevantQuarter = 'Upcoming Quarter'}
+if ($record.quarter.slice(1) == $lastQuarter && $record.year == $lastQuarterYear) {$record.relevantQuarter = 'Last Quarter'}
+
+
+// calculate aggregates based on these record combinations
+naviga.calculateAggregates ({
+  $local, //This is the local object
+  groupKeys: [
+  {
+    name: "Year-Quarter",
+    groupKey: `${$record.year}-${$record.quarter}-${$record.rep1}`,
+  },
+/*  {
+    name: "Year-Quarter",
+    groupKey: `${$record.year}-${$record.quarter}-${$record.rep2}`,
+  },*/
+  {
+    name: "Year-Quarter",
+    groupKey: `${$record.year}-${$record.quarter}-${$record.rep2}`,
+  },
+/*  {
+    name: "Year-Quarter",
+    groupKey: `${$record.year}-${$record.quarter}-${$record.reps}`,
+  },*/
+]
+,
+  groupAggr: [
+  {
+    name: "sumNet",
+    initValue: 0,
+    value: $record.netAmount,
+  },
+  /*{
+    name: "sumNetDigital",
+    initValue: 0,
+    value: $record.netAmount,
+  },*/
+  {
+    name: "sumNetDigitalSplit",
+    initValue: 0,
+    value: $record.netAmount,
+  },
+],
+}
+)
+
+// FLUSH
+
+// POWER SCRIPT 2
+
+// Define the groupKey to be used across aggregates
+// !!!!Must be the same as those defined in the first Powerscript
+groupKey1 = `${$record.year}-${$record.quarter}-${$record.rep1}`;
+groupKey2 = `${$record.year}-${$record.quarter}-${$record.rep2}`;
+groupKey3 = `${$record.year}-${$record.quarter}-${$record.rep2}`;
+
+// GROUP KEY 1
+$record.yearQuarterRep = groupKey1; // If you want a record in your data showing the groupKey for the record
+if (!$local[groupKey1].GroupSet) {
+  $record.totalActual = $local[groupKey1].sumNet;
+  $local[groupKey1].GroupSet = true; //Setting to true means we will not excute this code again during the load.
+}
+/*// GROUP KEY 2
+$record.yearQuarterRep2 = groupKey2; // If you want a record in your data showing the groupKey for the record
+if (!$local[groupKey2].GroupSet) {
+  $record.totalActualDigital = $local[groupKey2].sumNetDigital;
+  $local[groupKey2].GroupSet = true; //Setting to true means we will not excute this code again during the load.
+}*/
+// GROUP KEY 3
+$record.yearQuarterRepDigital = groupKey3; // If you want a record in your data showing the groupKey for the record
+if (!$local[groupKey3].GroupSet) {
+  $record.totalActualDigital = $local[groupKey3].sumNetDigitalSplit;
+  $local[groupKey3].GroupSet = true; //Setting to true means we will not excute this code again during the load.
+}
+
+if ($record.rep1 == 'vazques') {$record.rep1 = ''; $record.yearQuarterRep = ''; $record.yearQuarterRepDigital = ''; $record.totalActual = '';}
+if ($record.reps == '') {$record.totalActual = '';}
+
+// FIELDS FROM ANOTHER DATASET: PY REP SCORECARDS --> PY TOTAL ACTUALS
+// FIELDS FROM ANOTHER DATASET: PY REP SCORECARDS --> DIG PY TOTAL ACTUALS
+// FIELDS FROM ANOTHER DATASET: PY REP SCORECARDS-GOALS --> TOTAL GOALS
+// FIELDS FROM ANOTHER DATASET: PY REP SCORECARDS-GOALS --> TOTAL DIGITAL GOALS
+// MERGE DUPLICATES: GOAL HELPER
+// REMOVE FIELDS: NET AMOUNT, BRAND REPS, CURRENT REP ID, LINE ID, MONTH, MONTH PERIOD, QUARTER, WEBSITE ID, YEAR, MONTH ACTUAL AMT, MONTH ACTUAL COMM AMT, MONTH EST AMT, MONTH START DATE
+
+// POWER SCRIPT 3
+
+//calculations
+$record.varToGoal = $record.totalActual - $record.goalsTotal
+$record.percToGoal = $record.totalActual / $record.goalsTotal * 100
+
+$record.pyTotalActual = naviga.sumMultiValuedField($record.pyTotalActual)
+
+$record.varToPY = $record.totalActual - $record.pyTotalActual  
+$record.percToPY = $record.totalActual / $record.pyTotalActual  * 100
+
+$record.digVarToGoal = $record.totalActualDigital - $record.digGoalTotal
+$record.digPercToGoal = $record.totalActualDigital / $record.digGoalTotal * 100
+
+$record.digVarToPY = $record.totalActualDigital - $record.digPyTotalActualDigital 
+$record.digPercToPY = $record.totalActualDigital / $record.digPyTotalActualDigital * 100
